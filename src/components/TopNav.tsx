@@ -25,12 +25,14 @@ import {
   CalendarDays,
   UserRound,
   LayoutDashboard,
+  Building2,
   Menu,
   X,
   ArrowRight,
   LogOut,
 } from 'lucide-react'
 import brandLogo from '../assets/hackhit-logo-sticker.png'
+import { isInstitutionalDomain } from '../lib/institutionalAuth'
 
 export interface TopNavProps {
   currentView?:
@@ -140,8 +142,23 @@ export function TopNav({
     }
   }
 
+  const isUniversity = Boolean(
+    session?.user?.user_metadata?.role === 'university' ||
+      session?.user?.user_metadata?.is_university === true ||
+      (session?.user?.email && isInstitutionalDomain(session.user.email))
+  )
+
+  const handleOrganizerNav = () => {
+    if (onNavigateToOrganizer) {
+      onNavigateToOrganizer()
+    } else {
+      window.location.hash = '#organizer'
+    }
+  }
+
   const displayName =
     userDisplayName ||
+    session?.user?.user_metadata?.organization_name ||
     session?.user?.user_metadata?.full_name ||
     session?.user?.email?.split('@')[0] ||
     session?.user?.phone ||
@@ -225,12 +242,35 @@ export function TopNav({
             >
               <UserRound size={18} />
             </NavIconItem>
+
+            {/* University Portal: Building2 (for universities / organizers) */}
+            {(isUniversity || currentView === 'organizer') && (
+              <NavIconItem
+                label="University Portal"
+                href="#organizer"
+                isActive={currentView === 'organizer'}
+                onClick={handleOrganizerNav}
+              >
+                <Building2 size={18} className="text-[#F5F04A]" />
+              </NavIconItem>
+            )}
           </nav>
 
           {/* Desktop Auth Controls */}
           <div className="hidden md:flex items-center gap-3">
             {session ? (
               <div className="flex items-center gap-2">
+                {isUniversity && (
+                  <button
+                    type="button"
+                    onClick={handleOrganizerNav}
+                    title="University Portal"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#F5F04A] bg-[#F5F04A]/10 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-[#F5F04A] hover:bg-[#F5F04A] hover:text-[#050505] transition-colors cursor-pointer"
+                  >
+                    <Building2 size={12} />
+                    <span>College Portal</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleProfileNav()}
@@ -423,14 +463,14 @@ export function TopNav({
                 </a>
               )}
 
-              {/* Organizer Dashboard (if available) */}
-              {session && onNavigateToOrganizer && (
+              {/* University Portal / Organizer Dashboard */}
+              {session && (isUniversity || onNavigateToOrganizer || currentView === 'organizer') && (
                 <a
                   href="#organizer"
                   onClick={(e) => {
                     e.preventDefault()
                     setIsMobileMenuOpen(false)
-                    onNavigateToOrganizer()
+                    handleOrganizerNav()
                   }}
                   className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 transition-colors cursor-pointer ${
                     currentView === 'organizer'
@@ -438,8 +478,8 @@ export function TopNav({
                       : 'text-[#E9E7D8] hover:bg-white/10'
                   }`}
                 >
-                  <LayoutDashboard size={18} />
-                  <span>Organizer Dashboard</span>
+                  <Building2 size={18} />
+                  <span>University Portal</span>
                   {currentView === 'organizer' && (
                     <span className="text-xs ml-auto">● Active</span>
                   )}

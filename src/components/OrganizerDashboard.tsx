@@ -28,15 +28,31 @@ import {
   MapPin,
   ExternalLink,
   ShieldAlert,
+  Building2,
+  Megaphone,
+  Search,
+  Check,
+  Loader2,
+  Sparkles,
+  User,
+  Trophy,
 } from 'lucide-react'
 
 import { TopNav } from './TopNav'
-import { checkOrganizerAccess, fetchOrganizerDashboardData } from '../lib/organizers'
+import {
+  checkOrganizerAccess,
+  fetchOrganizerDashboardData,
+  createOrganizerHackathon,
+  fetchOrganizerParticipants,
+} from '../lib/organizers'
+import { createPost } from '../lib/community'
 import type {
   OrganizerRoleCheckResult,
   OrganizerSummaryMetrics,
   OrganizerEventItem,
+  OrganizerParticipantItem,
 } from '../types/organizers'
+import type { HackathonCategory, ParticipationMode } from '../types/hackathons'
 
 export interface OrganizerDashboardProps {
   session?: Session | null
@@ -69,7 +85,9 @@ export function OrganizerDashboard({
   forcedRoleCheck,
 }: OrganizerDashboardProps) {
   // Navigation / Tab state within dashboard
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'my-events'>('dashboard')
+  const [activeTab, setActiveTab] = useState<
+    'dashboard' | 'my-events' | 'create-event' | 'registrations' | 'updates'
+  >('dashboard')
 
   // Authorization check state
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
@@ -88,6 +106,34 @@ export function OrganizerDashboard({
     totalRegistrationsCount: 0,
   })
   const [events, setEvents] = useState<OrganizerEventItem[]>([])
+
+  // Create Event Form state
+  const [createTitle, setCreateTitle] = useState('')
+  const [createCategory, setCreateCategory] = useState<HackathonCategory>('AI/ML')
+  const [createMode, setCreateMode] = useState<ParticipationMode>('Online')
+  const [createLocation, setCreateLocation] = useState('')
+  const [createPrizePool, setCreatePrizePool] = useState('')
+  const [createDescription, setCreateDescription] = useState('')
+  const [createCoverImage, setCreateCoverImage] = useState('')
+  const [createDeadline, setCreateDeadline] = useState('')
+  const [createStartDate, setCreateStartDate] = useState('')
+  const [createEndDate, setCreateEndDate] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null)
+
+  // Participants Tracking state
+  const [participants, setParticipants] = useState<OrganizerParticipantItem[]>([])
+  const [isLoadingParticipants, setIsLoadingParticipants] = useState(false)
+  const [participantSearch, setParticipantSearch] = useState('')
+  const [participantsError, setParticipantsError] = useState<string | null>(null)
+
+  // Campus Announcement state
+  const [updateContent, setUpdateContent] = useState('')
+  const [updateImage, setUpdateImage] = useState('')
+  const [isPostingUpdate, setIsPostingUpdate] = useState(false)
+  const [updateSuccess, setUpdateSuccess] = useState<string | null>(null)
+  const [updateError, setUpdateError] = useState<string | null>(null)
 
   // Verify organizer authorization
   const verifyAuthorization = useCallback(async () => {
@@ -134,6 +180,24 @@ export function OrganizerDashboard({
     }
   }, [])
 
+  // Load participants for tracking
+  const loadParticipants = useCallback(async () => {
+    setIsLoadingParticipants(true)
+    setParticipantsError(null)
+    try {
+      const res = await fetchOrganizerParticipants()
+      if (res.error) {
+        setParticipantsError(res.error)
+      } else {
+        setParticipants(res.participants)
+      }
+    } catch (err) {
+      setParticipantsError(err instanceof Error ? err.message : 'Failed to load participants.')
+    } finally {
+      setIsLoadingParticipants(false)
+    }
+  }, [])
+
   useEffect(() => {
     verifyAuthorization()
   }, [verifyAuthorization, session])
@@ -143,6 +207,89 @@ export function OrganizerDashboard({
       loadDashboardData()
     }
   }, [authResult.isOrganizer, loadDashboardData])
+
+  useEffect(() => {
+    if (authResult.isOrganizer && activeTab === 'registrations') {
+      loadParticipants()
+    }
+  }, [authResult.isOrganizer, activeTab, loadParticipants])
+
+  // Handle Create Hackathon Submission
+  const handleCreateHackathonSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!createTitle.trim()) {
+      setCreateError('Please enter a hackathon title.')
+      return
+    }
+    setIsCreating(true)
+    setCreateError(null)
+    setCreateSuccess(null)
+    try {
+      const res = await createOrganizerHackathon({
+        title: createTitle,
+        category: createCategory,
+        mode: createMode,
+        location: createLocation,
+        prize_pool: createPrizePool,
+        description: createDescription,
+        cover_image_url: createCoverImage,
+        start_date: createStartDate || undefined,
+        end_date: createEndDate || undefined,
+        registration_deadline: createDeadline || undefined,
+      })
+      if (res.error) {
+        setCreateError(res.error)
+      } else {
+        setCreateSuccess(`Hackathon "${createTitle}" published successfully!`)
+        setCreateTitle('')
+        setCreateLocation('')
+        setCreatePrizePool('')
+        setCreateDescription('')
+        setCreateCoverImage('')
+        setCreateDeadline('')
+        setCreateStartDate('')
+        setCreateEndDate('')
+        await loadDashboardData()
+        setTimeout(() => {
+          setActiveTab('my-events')
+        }, 1200)
+      }
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create hackathon.')
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  // Handle Post Campus Announcement
+  const handlePostUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!updateContent.trim()) {
+      setUpdateError('Please enter your announcement message.')
+      return
+    }
+    setIsPostingUpdate(true)
+    setUpdateError(null)
+    setUpdateSuccess(null)
+    try {
+      const orgTag = authResult.organizationName
+        ? `[${authResult.organizationName.toUpperCase()} OFFICIAL ANNOUNCEMENT]`
+        : '[OFFICIAL UNIVERSITY ANNOUNCEMENT]'
+      const fullText = `${orgTag}\n\n${updateContent.trim()}`
+      const res = await createPost(fullText, updateImage.trim() || undefined)
+      if (res.error) {
+        setUpdateError(res.error)
+      } else {
+        setUpdateSuccess('Official announcement published to the Community Feed!')
+        setUpdateContent('')
+        setUpdateImage('')
+      }
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to post announcement.')
+    } finally {
+      setIsPostingUpdate(false)
+    }
+  }
 
   // Format date helper
   const formatDateRange = (start?: string | null, end?: string | null) => {
@@ -384,13 +531,13 @@ export function OrganizerDashboard({
           {/* DASHBOARD NAVIGATION BAR */}
           <nav
             aria-label="Organizer navigation"
-            className="mt-8 pt-6 border-t border-[#050505]/10 flex flex-wrap items-center gap-2.5 sm:gap-3"
+            className="mt-8 pt-6 border-t border-[#050505]/10 flex flex-wrap items-center gap-2 sm:gap-3"
           >
             {/* Dashboard Tab */}
             <button
               type="button"
               onClick={() => setActiveTab('dashboard')}
-              className={`cursor-pointer inline-flex items-center gap-2 rounded-xl border-[2px] px-4 py-2 text-xs font-black uppercase tracking-wider transition-all ${
+              className={`cursor-pointer inline-flex items-center gap-2 rounded-xl border-[2px] px-3.5 py-2 text-xs font-black uppercase tracking-wider transition-all ${
                 activeTab === 'dashboard'
                   ? 'border-[#050505] bg-[#F5F04A] text-[#050505] shadow-[3px_3px_0_#050505]'
                   : 'border-[#050505]/20 bg-stone-50 text-[#050505]/70 hover:border-[#050505] hover:text-[#050505]'
@@ -404,7 +551,7 @@ export function OrganizerDashboard({
             <button
               type="button"
               onClick={() => setActiveTab('my-events')}
-              className={`cursor-pointer inline-flex items-center gap-2 rounded-xl border-[2px] px-4 py-2 text-xs font-black uppercase tracking-wider transition-all ${
+              className={`cursor-pointer inline-flex items-center gap-2 rounded-xl border-[2px] px-3.5 py-2 text-xs font-black uppercase tracking-wider transition-all ${
                 activeTab === 'my-events'
                   ? 'border-[#050505] bg-[#F5F04A] text-[#050505] shadow-[3px_3px_0_#050505]'
                   : 'border-[#050505]/20 bg-stone-50 text-[#050505]/70 hover:border-[#050505] hover:text-[#050505]'
@@ -414,37 +561,47 @@ export function OrganizerDashboard({
               <span>My Events ({metrics.totalEventsCreated})</span>
             </button>
 
-            {/* Create Event (Disabled until Step 9.2) */}
-            <div className="relative group">
-              <button
-                type="button"
-                disabled
-                className="cursor-not-allowed inline-flex items-center gap-2 rounded-xl border-[2px] border-stone-300 bg-stone-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-stone-400"
-                aria-disabled="true"
-              >
-                <PlusCircle size={14} />
-                <span>Create Event</span>
-                <span className="rounded-full bg-stone-200 px-2 py-0.2 text-[9px] font-black text-stone-500 uppercase">
-                  Available in Step 9.2
-                </span>
-              </button>
-            </div>
+            {/* Create Event Tab */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('create-event')}
+              className={`cursor-pointer inline-flex items-center gap-2 rounded-xl border-[2px] px-3.5 py-2 text-xs font-black uppercase tracking-wider transition-all ${
+                activeTab === 'create-event'
+                  ? 'border-[#050505] bg-[#F5F04A] text-[#050505] shadow-[3px_3px_0_#050505]'
+                  : 'border-[#050505]/20 bg-stone-50 text-[#050505]/70 hover:border-[#050505] hover:text-[#050505]'
+              }`}
+            >
+              <PlusCircle size={14} />
+              <span>Create Hackathon</span>
+            </button>
 
-            {/* Registrations (Disabled until Step 9.4) */}
-            <div className="relative group">
-              <button
-                type="button"
-                disabled
-                className="cursor-not-allowed inline-flex items-center gap-2 rounded-xl border-[2px] border-stone-300 bg-stone-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-stone-400"
-                aria-disabled="true"
-              >
-                <ClipboardList size={14} />
-                <span>Registrations</span>
-                <span className="rounded-full bg-stone-200 px-2 py-0.2 text-[9px] font-black text-stone-500 uppercase">
-                  Available in Step 9.4
-                </span>
-              </button>
-            </div>
+            {/* Registrations Tab */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('registrations')}
+              className={`cursor-pointer inline-flex items-center gap-2 rounded-xl border-[2px] px-3.5 py-2 text-xs font-black uppercase tracking-wider transition-all ${
+                activeTab === 'registrations'
+                  ? 'border-[#050505] bg-[#F5F04A] text-[#050505] shadow-[3px_3px_0_#050505]'
+                  : 'border-[#050505]/20 bg-stone-50 text-[#050505]/70 hover:border-[#050505] hover:text-[#050505]'
+              }`}
+            >
+              <ClipboardList size={14} />
+              <span>Track Participants ({participants.length || metrics.totalRegistrationsCount})</span>
+            </button>
+
+            {/* Campus Updates Tab */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('updates')}
+              className={`cursor-pointer inline-flex items-center gap-2 rounded-xl border-[2px] px-3.5 py-2 text-xs font-black uppercase tracking-wider transition-all ${
+                activeTab === 'updates'
+                  ? 'border-[#050505] bg-[#F5F04A] text-[#050505] shadow-[3px_3px_0_#050505]'
+                  : 'border-[#050505]/20 bg-stone-50 text-[#050505]/70 hover:border-[#050505] hover:text-[#050505]'
+              }`}
+            >
+              <Megaphone size={14} />
+              <span>Campus Updates</span>
+            </button>
           </nav>
         </header>
 
@@ -462,11 +619,6 @@ export function OrganizerDashboard({
                 Failed to Load Dashboard Metrics
               </h2>
               <p className="text-xs text-red-800">{dataError}</p>
-              {isPendingSchema && (
-                <p className="text-[11px] text-red-700 font-mono mt-1">
-                  Database schema migration may be pending.
-                </p>
-              )}
             </div>
             <button
               type="button"
@@ -479,202 +631,626 @@ export function OrganizerDashboard({
           </div>
         )}
 
-        {/* SUMMARY METRICS CARDS */}
-        <section aria-label="Key metrics" className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* 1. Events Created */}
-          <article className="rounded-[24px] border-[2.5px] border-[#050505] bg-white p-6 shadow-[5px_5px_0_#050505] flex flex-col justify-between space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-[#050505]/60">
-                Total Events Created
-              </span>
-              <div className="grid h-10 w-10 place-items-center rounded-xl border-[2px] border-[#050505] bg-[#E9E7D8] shadow-[2px_2px_0_#050505]">
-                <CalendarDays size={18} className="text-[#050505]" />
-              </div>
-            </div>
-            <div>
-              <p className="display-font text-4xl sm:text-5xl font-black text-[#050505]">
-                {isLoadingData ? '...' : metrics.totalEventsCreated}
-              </p>
-              <p className="text-[11px] text-[#050505]/70 mt-1">
-                Competitions created under your account
-              </p>
-            </div>
-          </article>
-
-          {/* 2. Published Events */}
-          <article className="rounded-[24px] border-[2.5px] border-[#050505] bg-white p-6 shadow-[5px_5px_0_#050505] flex flex-col justify-between space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-[#050505]/60">
-                Published Events
-              </span>
-              <div className="grid h-10 w-10 place-items-center rounded-xl border-[2px] border-[#050505] bg-[#F5F04A] shadow-[2px_2px_0_#050505]">
-                <CheckCircle2 size={18} className="text-[#050505]" />
-              </div>
-            </div>
-            <div>
-              <p className="display-font text-4xl sm:text-5xl font-black text-[#050505]">
-                {isLoadingData ? '...' : metrics.publishedEventsCount}
-              </p>
-              <p className="text-[11px] text-[#050505]/70 mt-1">
-                Publicly active on the discovery board
-              </p>
-            </div>
-          </article>
-
-          {/* 3. Registrations */}
-          <article className="rounded-[24px] border-[2.5px] border-[#050505] bg-white p-6 shadow-[5px_5px_0_#050505] flex flex-col justify-between space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-[#050505]/60">
-                Total Registrations
-              </span>
-              <div className="grid h-10 w-10 place-items-center rounded-xl border-[2px] border-[#050505] bg-[#E9E7D8] shadow-[2px_2px_0_#050505]">
-                <Users size={18} className="text-[#050505]" />
-              </div>
-            </div>
-            <div>
-              <p className="display-font text-4xl sm:text-5xl font-black text-[#050505]">
-                {isLoadingData ? '...' : metrics.totalRegistrationsCount}
-              </p>
-              <p className="text-[11px] text-[#050505]/70 mt-1">
-                Verified hacker and team registrations
-              </p>
-            </div>
-          </article>
-        </section>
-
-        {/* MY EVENTS SECTION */}
-        <section aria-labelledby="my-events-heading" className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2
-                id="my-events-heading"
-                className="display-font text-2xl sm:text-3xl uppercase tracking-tight text-[#050505]"
-              >
-                My Events
-              </h2>
-              <p className="text-xs text-[#050505]/70">
-                Hackathons and competitions registered under your organizer profile
-              </p>
-            </div>
-          </div>
-
-          {/* LOADING EVENTS STATE */}
-          {isLoadingData && (
-            <div className="space-y-4" role="status" aria-label="Loading events">
-              {[1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="rounded-[24px] border-[2px] border-[#050505]/30 bg-white/70 p-6 animate-pulse space-y-3"
-                >
-                  <div className="h-5 w-1/3 bg-stone-200 rounded" />
-                  <div className="h-4 w-1/2 bg-stone-200 rounded" />
+        {/* TAB 1: DASHBOARD OVERVIEW */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-8">
+            {/* SUMMARY METRICS CARDS */}
+            <section aria-label="Key metrics" className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {/* 1. Events Created */}
+              <article className="rounded-[24px] border-[2.5px] border-[#050505] bg-white p-6 shadow-[5px_5px_0_#050505] flex flex-col justify-between space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-[#050505]/60">
+                    Total Events Created
+                  </span>
+                  <div className="grid h-10 w-10 place-items-center rounded-xl border-[2px] border-[#050505] bg-[#E9E7D8] shadow-[2px_2px_0_#050505]">
+                    <CalendarDays size={18} className="text-[#050505]" />
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* EMPTY EVENTS STATE */}
-          {!isLoadingData && !dataError && events.length === 0 && (
-            <div className="rounded-[28px] border-[2.5px] border-[#050505] bg-white p-8 sm:p-14 text-center shadow-[6px_6px_0_#050505] space-y-6">
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border-[2px] border-[#050505] bg-[#F5F04A] shadow-[3px_3px_0_#050505]">
-                <CalendarDays size={30} className="text-[#050505]" />
-              </div>
-
-              <div className="space-y-2 max-w-md mx-auto">
-                <div className="inline-flex items-center gap-1.5 rounded-full border border-[#050505] bg-[#E9E7D8] px-3 py-0.5 text-[10px] font-black uppercase text-[#050505]">
-                  <span>No Events Registered</span>
+                <div>
+                  <p className="display-font text-4xl sm:text-5xl font-black text-[#050505]">
+                    {isLoadingData ? '...' : metrics.totalEventsCreated}
+                  </p>
+                  <p className="text-[11px] text-[#050505]/70 mt-1">
+                    Hackathons created by your university
+                  </p>
                 </div>
-                <h3 className="display-font text-3xl uppercase text-[#050505] mt-2">
-                  No Events Created Yet
-                </h3>
-                <p className="text-xs sm:text-sm text-[#050505]/75 leading-relaxed">
-                  You haven't created any hackathons under this organizer account yet. Once published, your event details and live hacker registration roster will be accessible right here.
-                </p>
-                <p className="text-[11px] font-bold text-[#050505]/60 uppercase tracking-wider pt-2">
-                  Event creation workflow will be available in the upcoming release.
-                </p>
+              </article>
+
+              {/* 2. Published Events */}
+              <article className="rounded-[24px] border-[2.5px] border-[#050505] bg-white p-6 shadow-[5px_5px_0_#050505] flex flex-col justify-between space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-[#050505]/60">
+                    Published Events
+                  </span>
+                  <div className="grid h-10 w-10 place-items-center rounded-xl border-[2px] border-[#050505] bg-[#F5F04A] shadow-[2px_2px_0_#050505]">
+                    <CheckCircle2 size={18} className="text-[#050505]" />
+                  </div>
+                </div>
+                <div>
+                  <p className="display-font text-4xl sm:text-5xl font-black text-[#050505]">
+                    {isLoadingData ? '...' : metrics.publishedEventsCount}
+                  </p>
+                  <p className="text-[11px] text-[#050505]/70 mt-1">
+                    Live and accepting student registrations
+                  </p>
+                </div>
+              </article>
+
+              {/* 3. Registrations */}
+              <article className="rounded-[24px] border-[2.5px] border-[#050505] bg-white p-6 shadow-[5px_5px_0_#050505] flex flex-col justify-between space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-[#050505]/60">
+                    Total Registrations
+                  </span>
+                  <div className="grid h-10 w-10 place-items-center rounded-xl border-[2px] border-[#050505] bg-[#E9E7D8] shadow-[2px_2px_0_#050505]">
+                    <Users size={18} className="text-[#050505]" />
+                  </div>
+                </div>
+                <div>
+                  <p className="display-font text-4xl sm:text-5xl font-black text-[#050505]">
+                    {isLoadingData ? '...' : metrics.totalRegistrationsCount}
+                  </p>
+                  <p className="text-[11px] text-[#050505]/70 mt-1">
+                    Student participants tracked across events
+                  </p>
+                </div>
+              </article>
+            </section>
+
+            {/* QUICK ACTIONS FOR UNIVERSITIES */}
+            <section className="rounded-[28px] border-[2.5px] border-[#050505] bg-white p-6 sm:p-8 shadow-[5px_5px_0_#050505] space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="display-font text-2xl uppercase tracking-tight text-[#050505]">
+                    Organizer Workflows
+                  </h2>
+                  <p className="text-xs text-[#050505]/70">
+                    Tools exclusively available to verified college and university accounts
+                  </p>
+                </div>
               </div>
 
-              <div className="pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                 <button
                   type="button"
-                  onClick={onNavigateToHackathons}
-                  className="inline-flex min-h-[46px] cursor-pointer items-center gap-2 rounded-full border-[2px] border-[#050505] bg-[#F5F04A] px-7 text-xs font-black uppercase tracking-wider text-[#050505] shadow-[3px_3px_0_#050505] hover:bg-white hover:-translate-y-0.5 transition-all"
+                  onClick={() => setActiveTab('create-event')}
+                  className="rounded-2xl border-2 border-[#050505] bg-[#F5F04A] p-5 text-left shadow-[3px_3px_0_#050505] hover:bg-white transition-all cursor-pointer space-y-2 group"
                 >
-                  <Compass size={14} />
-                  <span>View Student Discovery Page</span>
-                  <ArrowRight size={14} />
+                  <div className="grid h-10 w-10 place-items-center rounded-xl border-2 border-[#050505] bg-white shadow-[1.5px_1.5px_0_#050505]">
+                    <PlusCircle size={20} className="text-[#050505]" />
+                  </div>
+                  <h3 className="font-extrabold text-sm uppercase text-[#050505]">
+                    Create Hackathon
+                  </h3>
+                  <p className="text-xs text-[#050505]/80 leading-relaxed">
+                    Publish an official university hackathon, configure prize pools, and open registrations.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('registrations')}
+                  className="rounded-2xl border-2 border-[#050505] bg-[#E9E7D8] p-5 text-left shadow-[3px_3px_0_#050505] hover:bg-white transition-all cursor-pointer space-y-2 group"
+                >
+                  <div className="grid h-10 w-10 place-items-center rounded-xl border-2 border-[#050505] bg-white shadow-[1.5px_1.5px_0_#050505]">
+                    <Users size={20} className="text-[#050505]" />
+                  </div>
+                  <h3 className="font-extrabold text-sm uppercase text-[#050505]">
+                    Track Participants
+                  </h3>
+                  <p className="text-xs text-[#050505]/80 leading-relaxed">
+                    Inspect verified student registrations, team formations, and contact information.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('updates')}
+                  className="rounded-2xl border-2 border-[#050505] bg-white p-5 text-left shadow-[3px_3px_0_#050505] hover:bg-[#F5F04A] transition-all cursor-pointer space-y-2 group"
+                >
+                  <div className="grid h-10 w-10 place-items-center rounded-xl border-2 border-[#050505] bg-[#E9E7D8] shadow-[1.5px_1.5px_0_#050505]">
+                    <Megaphone size={20} className="text-[#050505]" />
+                  </div>
+                  <h3 className="font-extrabold text-sm uppercase text-[#050505]">
+                    Post Campus Update
+                  </h3>
+                  <p className="text-xs text-[#050505]/80 leading-relaxed">
+                    Broadcast verified institutional announcements and timeline updates to Community.
+                  </p>
                 </button>
               </div>
-            </div>
-          )}
+            </section>
+          </div>
+        )}
 
-          {/* REAL EVENTS LIST */}
-          {!isLoadingData && !dataError && events.length > 0 && (
-            <div className="grid grid-cols-1 gap-4">
-              {events.map((event) => (
-                <article
-                  key={event.id}
-                  className="rounded-[24px] border-[2.5px] border-[#050505] bg-white p-6 shadow-[5px_5px_0_#050505] space-y-4 hover:translate-x-0.5 transition-all"
+        {/* TAB 2: MY EVENTS */}
+        {activeTab === 'my-events' && (
+          <section aria-labelledby="my-events-heading" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2
+                  id="my-events-heading"
+                  className="display-font text-2xl sm:text-3xl uppercase tracking-tight text-[#050505]"
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`rounded-full border border-[#050505] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                            event.status === 'published'
-                              ? 'bg-emerald-100 text-emerald-950'
-                              : 'bg-amber-100 text-amber-950'
-                          }`}
-                        >
-                          {event.status}
-                        </span>
-                        <span className="rounded-full border border-[#050505]/30 bg-stone-100 px-2.5 py-0.5 text-[10px] font-bold uppercase text-[#050505]/70">
-                          {event.category}
-                        </span>
-                        <span className="rounded-full border border-[#050505]/30 bg-stone-100 px-2.5 py-0.5 text-[10px] font-bold uppercase text-[#050505]/70">
-                          {event.mode}
-                        </span>
+                  My Hackathons
+                </h2>
+                <p className="text-xs text-[#050505]/70">
+                  Hackathons organized by your college/university
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('create-event')}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-full border-2 border-[#050505] bg-[#F5F04A] px-4 py-2 text-xs font-black uppercase tracking-wider text-[#050505] shadow-[2px_2px_0_#050505] hover:bg-white transition-all"
+              >
+                <PlusCircle size={14} />
+                <span>Create New Hackathon</span>
+              </button>
+            </div>
+
+            {/* EMPTY EVENTS STATE */}
+            {!isLoadingData && !dataError && events.length === 0 && (
+              <div className="rounded-[28px] border-[2.5px] border-[#050505] bg-white p-8 sm:p-14 text-center shadow-[6px_6px_0_#050505] space-y-6">
+                <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border-[2px] border-[#050505] bg-[#F5F04A] shadow-[3px_3px_0_#050505]">
+                  <Trophy size={30} className="text-[#050505]" />
+                </div>
+
+                <div className="space-y-2 max-w-md mx-auto">
+                  <h3 className="display-font text-3xl uppercase text-[#050505] mt-2">
+                    No Events Created Yet
+                  </h3>
+                  <p className="text-xs sm:text-sm text-[#050505]/75 leading-relaxed">
+                    Your university has not created any hackathons yet. Click below to launch your first campus hackathon!
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('create-event')}
+                    className="inline-flex min-h-[46px] cursor-pointer items-center gap-2 rounded-full border-[2px] border-[#050505] bg-[#F5F04A] px-7 text-xs font-black uppercase tracking-wider text-[#050505] shadow-[3px_3px_0_#050505] hover:bg-white hover:-translate-y-0.5 transition-all"
+                  >
+                    <PlusCircle size={14} />
+                    <span>Create Your First Hackathon</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* REAL EVENTS LIST */}
+            {!isLoadingData && !dataError && events.length > 0 && (
+              <div className="grid grid-cols-1 gap-4">
+                {events.map((event) => (
+                  <article
+                    key={event.id}
+                    className="rounded-[24px] border-[2.5px] border-[#050505] bg-white p-6 shadow-[5px_5px_0_#050505] space-y-4 hover:translate-x-0.5 transition-all"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`rounded-full border border-[#050505] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                              event.status === 'published'
+                                ? 'bg-emerald-100 text-emerald-950'
+                                : 'bg-amber-100 text-amber-950'
+                            }`}
+                          >
+                            {event.status}
+                          </span>
+                          <span className="rounded-full border border-[#050505]/30 bg-stone-100 px-2.5 py-0.5 text-[10px] font-bold uppercase text-[#050505]/70">
+                            {event.category}
+                          </span>
+                          <span className="rounded-full border border-[#050505]/30 bg-stone-100 px-2.5 py-0.5 text-[10px] font-bold uppercase text-[#050505]/70">
+                            {event.mode}
+                          </span>
+                        </div>
+                        <h3 className="display-font text-xl sm:text-2xl uppercase text-[#050505] pt-1">
+                          {event.title}
+                        </h3>
                       </div>
-                      <h3 className="display-font text-xl sm:text-2xl uppercase text-[#050505] pt-1">
-                        {event.title}
-                      </h3>
+
+                      {onNavigateToEventDetails && (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateToEventDetails(event.id)}
+                          className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#050505] bg-[#E9E7D8] px-4 py-2 text-xs font-bold uppercase text-[#050505] shadow-[1.5px_1.5px_0_#050505] hover:bg-white cursor-pointer"
+                        >
+                          <span>View on Board</span>
+                          <ExternalLink size={12} />
+                        </button>
+                      )}
                     </div>
 
-                    {onNavigateToEventDetails && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigateToEventDetails(event.id)}
-                        className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[#050505] bg-[#E9E7D8] px-4 py-2 text-xs font-bold uppercase text-[#050505] shadow-[1.5px_1.5px_0_#050505] hover:bg-white cursor-pointer"
-                      >
-                        <span>View Details</span>
-                        <ExternalLink size={12} />
-                      </button>
-                    )}
-                  </div>
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-[#050505]/80 pt-2 border-t border-[#050505]/10">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Calendar size={13} />
+                        <span>{formatDateRange(event.start_date, event.end_date)}</span>
+                      </span>
+                      {event.location && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <MapPin size={13} />
+                          <span>{event.location}</span>
+                        </span>
+                      )}
+                      {event.registration_deadline && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>Deadline: {new Date(event.registration_deadline).toLocaleDateString()}</span>
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-[#050505]/80 pt-2 border-t border-[#050505]/10">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Calendar size={13} />
-                      <span>{formatDateRange(event.start_date, event.end_date)}</span>
-                    </span>
-                    {event.location && (
-                      <span className="inline-flex items-center gap-1.5">
-                        <MapPin size={13} />
-                        <span>{event.location}</span>
-                      </span>
-                    )}
-                    {event.registration_deadline && (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span>Deadline: {new Date(event.registration_deadline).toLocaleDateString()}</span>
-                      </span>
-                    )}
-                  </div>
-                </article>
-              ))}
+        {/* TAB 3: CREATE HACKATHON FORM */}
+        {activeTab === 'create-event' && (
+          <section className="rounded-[28px] border-[2.5px] border-[#050505] bg-white p-6 sm:p-10 shadow-[6px_6px_0_#050505] space-y-6 max-w-3xl mx-auto">
+            <div className="border-b border-[#050505]/15 pb-4">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-[#050505] bg-[#F5F04A] px-3 py-0.5 text-[10px] font-black uppercase text-[#050505] mb-2">
+                <PlusCircle size={12} />
+                <span>University Hackathon Authoring</span>
+              </div>
+              <h2 className="display-font text-3xl uppercase tracking-tight text-[#050505]">
+                Create & Publish Hackathon
+              </h2>
+              <p className="text-xs text-[#050505]/70 mt-1">
+                Launch a verified hackathon on the HackhIt campus discovery board. Only institutional representatives are authorized to publish competitions.
+              </p>
             </div>
-          )}
-        </section>
+
+            {createSuccess && (
+              <div className="rounded-xl border border-emerald-600 bg-emerald-50 p-4 text-xs text-emerald-950 font-bold flex items-center gap-2">
+                <Check size={16} className="text-emerald-700 shrink-0" />
+                <span>{createSuccess}</span>
+              </div>
+            )}
+
+            {createError && (
+              <div className="rounded-xl border border-red-600 bg-red-50 p-4 text-xs text-red-950 flex items-center gap-2">
+                <AlertCircle size={16} className="text-red-600 shrink-0" />
+                <span>{createError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateHackathonSubmit} className="space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                  Hackathon Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={createTitle}
+                  onChange={(e) => setCreateTitle(e.target.value)}
+                  placeholder="e.g. Malla Reddy AI Summit 2026"
+                  className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                />
+              </div>
+
+              {/* Category & Mode */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                    Technical Category *
+                  </label>
+                  <select
+                    value={createCategory}
+                    onChange={(e) => setCreateCategory(e.target.value as HackathonCategory)}
+                    className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                  >
+                    <option value="AI/ML">AI / Machine Learning</option>
+                    <option value="Web Development">Web Development</option>
+                    <option value="Blockchain">Blockchain & Web3</option>
+                    <option value="Data Science">Data Science & Analytics</option>
+                    <option value="Open Innovation">Open Innovation</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                    Participation Mode *
+                  </label>
+                  <select
+                    value={createMode}
+                    onChange={(e) => setCreateMode(e.target.value as ParticipationMode)}
+                    className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                  >
+                    <option value="Online">Online / Virtual</option>
+                    <option value="Offline">Offline / In-Person</option>
+                    <option value="Hybrid">Hybrid (Online & On-Campus)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Location & Prize Pool */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                    Campus Venue / Location
+                  </label>
+                  <input
+                    type="text"
+                    value={createLocation}
+                    onChange={(e) => setCreateLocation(e.target.value)}
+                    placeholder="e.g. Hyderabad, Telangana or Main Auditorium"
+                    className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                    Prize Pool
+                  </label>
+                  <input
+                    type="text"
+                    value={createPrizePool}
+                    onChange={(e) => setCreatePrizePool(e.target.value)}
+                    placeholder="e.g. ₹1,00,000 INR in Prizes"
+                    className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                  />
+                </div>
+              </div>
+
+              {/* Dates */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                    Registration Deadline
+                  </label>
+                  <input
+                    type="date"
+                    value={createDeadline}
+                    onChange={(e) => setCreateDeadline(e.target.value)}
+                    className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                    Event Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={createStartDate}
+                    onChange={(e) => setCreateStartDate(e.target.value)}
+                    className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                    Event End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={createEndDate}
+                    onChange={(e) => setCreateEndDate(e.target.value)}
+                    className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                  Hackathon Description
+                </label>
+                <textarea
+                  rows={4}
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  placeholder="Outline the problem statements, eligible students, rules, and judging criteria..."
+                  className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A] resize-y"
+                />
+              </div>
+
+              {/* Cover Image URL */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                  Cover Image URL (Optional)
+                </label>
+                <input
+                  type="url"
+                  value={createCoverImage}
+                  onChange={(e) => setCreateCoverImage(e.target.value)}
+                  placeholder="https://images.unsplash.com/photo-..."
+                  className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                />
+              </div>
+
+              <div className="pt-4 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('my-events')}
+                  className="rounded-full border border-[#050505] bg-white px-5 py-2.5 text-xs font-bold uppercase text-[#050505] hover:bg-neutral-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreating}
+                  className="inline-flex items-center gap-2 rounded-full border-2 border-[#050505] bg-[#F5F04A] px-7 py-2.5 text-xs font-black uppercase tracking-wider text-[#050505] shadow-[3px_3px_0_#050505] hover:bg-white hover:-translate-y-0.5 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {isCreating ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}
+                  <span>Publish Hackathon</span>
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
+
+        {/* TAB 4: TRACK PARTICIPANTS & REGISTRATIONS */}
+        {activeTab === 'registrations' && (
+          <section className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="display-font text-2xl sm:text-3xl uppercase tracking-tight text-[#050505]">
+                  Student Registrations & Tracking
+                </h2>
+                <p className="text-xs text-[#050505]/70">
+                  Track students registered for your university hackathons
+                </p>
+              </div>
+
+              <div className="relative min-w-[240px]">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#050505]/50" />
+                <input
+                  type="text"
+                  value={participantSearch}
+                  onChange={(e) => setParticipantSearch(e.target.value)}
+                  placeholder="Filter student or hackathon..."
+                  className="w-full rounded-full border border-[#050505] bg-white pl-9 pr-3.5 py-2 text-xs font-medium text-[#050505] outline-none"
+                />
+              </div>
+            </div>
+
+            {isLoadingParticipants && (
+              <div className="rounded-[24px] border-[2px] border-[#050505]/30 bg-white/70 p-10 text-center animate-pulse space-y-2">
+                <p className="text-xs font-bold text-[#050505]/70">Loading verified student participants...</p>
+              </div>
+            )}
+
+            {!isLoadingParticipants && participants.length === 0 && (
+              <div className="rounded-[28px] border-[2.5px] border-[#050505] bg-white p-10 text-center shadow-[5px_5px_0_#050505] space-y-3">
+                <Users size={32} className="mx-auto text-[#050505]/50" />
+                <h3 className="font-extrabold text-base uppercase text-[#050505]">No Student Registrations Yet</h3>
+                <p className="text-xs text-[#050505]/70 max-w-md mx-auto">
+                  When students register for competitions created by your institution, their names, university affiliations, emails, and team structures will appear here in real time.
+                </p>
+              </div>
+            )}
+
+            {!isLoadingParticipants && participants.length > 0 && (
+              <div className="rounded-[24px] border-[2.5px] border-[#050505] bg-white overflow-hidden shadow-[5px_5px_0_#050505]">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b-2 border-[#050505] bg-[#E9E7D8]/80 text-[10px] font-black uppercase tracking-wider text-[#050505]">
+                        <th className="p-4">Student</th>
+                        <th className="p-4">University</th>
+                        <th className="p-4">Hackathon</th>
+                        <th className="p-4">Email</th>
+                        <th className="p-4">Registered Date</th>
+                        <th className="p-4">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#050505]/10 text-xs">
+                      {participants
+                        .filter((p) => {
+                          if (!participantSearch.trim()) return true
+                          const q = participantSearch.toLowerCase()
+                          return (
+                            p.student_name.toLowerCase().includes(q) ||
+                            p.student_email.toLowerCase().includes(q) ||
+                            p.hackathon_title.toLowerCase().includes(q) ||
+                            p.student_university.toLowerCase().includes(q)
+                          )
+                        })
+                        .map((p) => (
+                          <tr key={p.id} className="hover:bg-[#F5F04A]/10 transition-colors">
+                            <td className="p-4 font-bold text-[#050505]">{p.student_name}</td>
+                            <td className="p-4 text-[#050505]/80">{p.student_university}</td>
+                            <td className="p-4 font-bold text-[#050505]">{p.hackathon_title}</td>
+                            <td className="p-4 font-mono text-[11px] text-[#050505]/70">{p.student_email}</td>
+                            <td className="p-4 text-[#050505]/70">
+                              {new Date(p.registered_at).toLocaleDateString()}
+                            </td>
+                            <td className="p-4">
+                              <span className="inline-block rounded-full border border-emerald-600 bg-emerald-100 px-2.5 py-0.5 text-[10px] font-black uppercase text-emerald-950">
+                                {p.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* TAB 5: CAMPUS ANNOUNCEMENTS & UPDATES */}
+        {activeTab === 'updates' && (
+          <section className="rounded-[28px] border-[2.5px] border-[#050505] bg-white p-6 sm:p-10 shadow-[6px_6px_0_#050505] space-y-6 max-w-2xl mx-auto">
+            <div className="border-b border-[#050505]/15 pb-4">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-[#050505] bg-[#F5F04A] px-3 py-0.5 text-[10px] font-black uppercase text-[#050505] mb-2">
+                <Megaphone size={12} />
+                <span>Official Campus Broadcast</span>
+              </div>
+              <h2 className="display-font text-3xl uppercase tracking-tight text-[#050505]">
+                Post University Update
+              </h2>
+              <p className="text-xs text-[#050505]/70 mt-1">
+                Share competition milestones, schedule changes, or hackathon notices directly to the HackhIt community feed with your verified university credentials.
+              </p>
+            </div>
+
+            {updateSuccess && (
+              <div className="rounded-xl border border-emerald-600 bg-emerald-50 p-4 text-xs text-emerald-950 font-bold flex items-center gap-2">
+                <Check size={16} className="text-emerald-700 shrink-0" />
+                <span>{updateSuccess}</span>
+              </div>
+            )}
+
+            {updateError && (
+              <div className="rounded-xl border border-red-600 bg-red-50 p-4 text-xs text-red-950 flex items-center gap-2">
+                <AlertCircle size={16} className="text-red-600 shrink-0" />
+                <span>{updateError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handlePostUpdateSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                  Official Announcement *
+                </label>
+                <textarea
+                  required
+                  rows={5}
+                  value={updateContent}
+                  onChange={(e) => setUpdateContent(e.target.value)}
+                  placeholder="e.g. Greetings hackers! Registration for Malla Reddy Web Cup 2026 is closing in 48 hours. Ensure your team roster is confirmed..."
+                  className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A] resize-y"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#050505] mb-1">
+                  Banner / Attachment Image URL (Optional)
+                </label>
+                <input
+                  type="url"
+                  value={updateImage}
+                  onChange={(e) => setUpdateImage(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isPostingUpdate}
+                  className="inline-flex items-center gap-2 rounded-full border-2 border-[#050505] bg-[#F5F04A] px-7 py-2.5 text-xs font-black uppercase tracking-wider text-[#050505] shadow-[3px_3px_0_#050505] hover:bg-white hover:-translate-y-0.5 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {isPostingUpdate ? <Loader2 size={14} className="animate-spin" /> : <Megaphone size={14} />}
+                  <span>Post Official Announcement</span>
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
+      </main>
+    </div>
+  )
+}
       </main>
     </div>
   )

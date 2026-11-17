@@ -22,8 +22,11 @@ import {
   Sparkles,
   ShieldCheck,
   Smartphone,
+  GraduationCap,
+  Building2,
 } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { validateUniversityEmail } from '../lib/institutionalAuth'
 import brandLogo from '../assets/hackhit-logo-sticker.png'
 import { GoogleIcon } from './GoogleIcon'
 import { PhoneOtpAuth } from './PhoneOtpAuth'
@@ -49,6 +52,7 @@ export function LoginScreen({
   onSessionChange,
   initialEmail = '',
 }: LoginScreenProps) {
+  const [accountType, setAccountType] = useState<'student' | 'university'>('student')
   const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email')
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [email, setEmail] = useState(initialEmail)
@@ -106,13 +110,23 @@ export function LoginScreen({
 
     const trimmedEmail = email.trim()
     if (!trimmedEmail) {
-      setEmailError('Please enter your campus email address.')
+      setEmailError(
+        accountType === 'university'
+          ? 'Please enter your official college email.'
+          : 'Please enter your email address.'
+      )
       isValid = false
     } else {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(trimmedEmail)) {
-        setEmailError('Please enter a valid email format (e.g., student@university.edu).')
+        setEmailError('Please enter a valid email format.')
         isValid = false
+      } else if (accountType === 'university') {
+        const uVal = validateUniversityEmail(trimmedEmail)
+        if (!uVal.isValid) {
+          setEmailError(uVal.error || 'Universities must use an official college email address.')
+          isValid = false
+        }
       }
     }
 
@@ -181,9 +195,21 @@ export function LoginScreen({
       if (data.session) {
         setSession(data.session)
         onSessionChange?.(data.session)
-        // Clear password from component memory after successful authentication
         setPassword('')
-        if (onLoginSuccess) {
+
+        const userMeta = data.session.user.user_metadata || {}
+        const isUniv =
+          accountType === 'university' ||
+          userMeta.role === 'university' ||
+          userMeta.is_university === true
+
+        if (isUniv) {
+          if (onLoginSuccess) {
+            onLoginSuccess('organizer')
+          } else {
+            window.location.hash = '#organizer'
+          }
+        } else if (onLoginSuccess) {
           onLoginSuccess(redirectTarget)
         } else if (redirectTarget === 'community' && onNavigateToCommunity) {
           onNavigateToCommunity()
@@ -474,19 +500,77 @@ export function LoginScreen({
           ) : (
             /* Login Form Card */
             <div className="rounded-[24px] border-[2.5px] border-[#050505] bg-[#fffef8] p-7 md:p-9 shadow-[5px_5px_0_#050505]">
+              {/* Dual Portal Switcher: Student vs. University */}
+              <div className="mb-6 grid grid-cols-2 gap-2 rounded-2xl border-[1.5px] border-[#050505] bg-[#E9E7D8]/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountType('student')
+                    setErrorMessage(null)
+                    setEmailError(null)
+                  }}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                    accountType === 'student'
+                      ? 'border-[1.5px] border-[#050505] bg-[#F5F04A] text-[#050505] shadow-[2px_2px_0_#050505]'
+                      : 'text-[#050505]/60 hover:text-[#050505]'
+                  }`}
+                >
+                  <GraduationCap size={15} />
+                  <span>Student</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountType('university')
+                    setErrorMessage(null)
+                    setEmailError(null)
+                    setAuthMethod('email')
+                  }}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                    accountType === 'university'
+                      ? 'border-[1.5px] border-[#050505] bg-[#050505] text-[#F5F04A] shadow-[2px_2px_0_#050505]'
+                      : 'text-[#050505]/60 hover:text-[#050505]'
+                  }`}
+                >
+                  <Building2 size={15} />
+                  <span>University</span>
+                </button>
+              </div>
+
               <div className="border-b border-[#050505]/15 pb-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-extrabold uppercase tracking-tight text-[#050505]">
-                    Student Sign In
+                    {accountType === 'university' ? 'University & College Sign In' : 'Student Sign In'}
                   </h2>
-                  <span className="rounded-full border border-[#050505] bg-[#F5F04A] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[#050505]">
-                    Student Access
+                  <span
+                    className={`rounded-full border border-[#050505] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${
+                      accountType === 'university'
+                        ? 'bg-[#050505] text-[#F5F04A]'
+                        : 'bg-[#F5F04A] text-[#050505]'
+                    }`}
+                  >
+                    {accountType === 'university' ? 'Official Campus Portal' : 'Student Access'}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-[#050505]/70">
-                  Choose your sign-in method or enter your credentials.
+                  {accountType === 'university'
+                    ? 'Official college email required (.edu, .ac.in, or university domain).'
+                    : 'Log in with your personal email (Gmail, etc.) or Google.'}
                 </p>
               </div>
+
+              {/* University Role Explanatory Banner */}
+              {accountType === 'university' && (
+                <div className="mt-4 rounded-xl border border-[#050505] bg-[#F5F04A]/25 p-3 text-xs text-[#050505] flex items-start gap-2.5">
+                  <Building2 size={16} className="shrink-0 mt-0.5 text-[#050505]" />
+                  <div className="space-y-0.5">
+                    <p className="font-bold">Official University Representative Portal</p>
+                    <p className="text-[11px] text-[#050505]/80 leading-relaxed">
+                      University accounts can create hackathons, publish campus updates, and track registered students. Generic personal emails (like Gmail) are not permitted.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Server-level Error Alert */}
               {errorMessage && (
@@ -502,57 +586,63 @@ export function LoginScreen({
                 </div>
               )}
 
-              {/* Social & Phone Sign-In Options */}
-              <div className="mt-5 space-y-2.5">
-                <button
-                  type="button"
-                  id="google-signin-button"
-                  onClick={handleGoogleSignIn}
-                  disabled={isLoading || isGoogleLoading}
-                  className="inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-full border-[2px] border-[#050505] bg-white px-5 text-xs font-extrabold uppercase tracking-wider text-[#050505] shadow-[2.5px_2.5px_0_#050505] transition-all hover:-translate-y-0.5 hover:shadow-[3.5px_3.5px_0_#050505] active:translate-y-0 active:shadow-none disabled:cursor-not-allowed disabled:opacity-65"
-                >
-                  {isGoogleLoading ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <GoogleIcon size={17} />
-                  )}
-                  Continue with Google
-                </button>
+              {/* Social & Phone Sign-In Options (Student Only) */}
+              {accountType === 'student' && (
+                <div className="mt-5 space-y-2.5">
+                  <button
+                    type="button"
+                    id="google-signin-button"
+                    onClick={handleGoogleSignIn}
+                    disabled={isLoading || isGoogleLoading}
+                    className="inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-full border-[2px] border-[#050505] bg-white px-5 text-xs font-extrabold uppercase tracking-wider text-[#050505] shadow-[2.5px_2.5px_0_#050505] transition-all hover:-translate-y-0.5 hover:shadow-[3.5px_3.5px_0_#050505] active:translate-y-0 active:shadow-none disabled:cursor-not-allowed disabled:opacity-65"
+                  >
+                    {isGoogleLoading ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <GoogleIcon size={17} />
+                    )}
+                    Continue with Google
+                  </button>
 
-                <button
-                  type="button"
-                  id="phone-signin-toggle"
-                  onClick={() => {
-                    setAuthMethod('phone')
-                    setErrorMessage(null)
-                  }}
-                  disabled={isLoading || isGoogleLoading}
-                  className="inline-flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border-[1.5px] border-[#050505] bg-white px-5 text-xs font-bold uppercase tracking-wider text-[#050505] shadow-[2px_2px_0_#050505] transition-all hover:bg-[#E9E7D8]/60 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-65"
-                >
-                  <Smartphone size={15} />
-                  Continue with phone
-                </button>
-              </div>
-
-              {/* Divider */}
-              <div className="relative my-4 flex items-center justify-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-[#050505]/20"></div>
+                  <button
+                    type="button"
+                    id="phone-signin-toggle"
+                    onClick={() => {
+                      setAuthMethod('phone')
+                      setErrorMessage(null)
+                    }}
+                    disabled={isLoading || isGoogleLoading}
+                    className="inline-flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border-[1.5px] border-[#050505] bg-white px-5 text-xs font-bold uppercase tracking-wider text-[#050505] shadow-[2px_2px_0_#050505] transition-all hover:bg-[#E9E7D8]/60 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-65"
+                  >
+                    <Smartphone size={15} />
+                    Continue with phone
+                  </button>
                 </div>
-                <span className="relative bg-[#fffef8] px-3 text-[10px] font-extrabold uppercase tracking-widest text-[#050505]/50">
-                  or with email
-                </span>
-              </div>
+              )}
+
+              {/* Divider (Student Only) */}
+              {accountType === 'student' && (
+                <div className="relative my-4 flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-[#050505]/20"></div>
+                  </div>
+                  <span className="relative bg-[#fffef8] px-3 text-[10px] font-extrabold uppercase tracking-widest text-[#050505]/50">
+                    or with email
+                  </span>
+                </div>
+              )}
 
               {/* Login Form */}
-              <form onSubmit={handleSubmit} noValidate className="space-y-4">
+              <form onSubmit={handleSubmit} noValidate className={`space-y-4 ${accountType === 'university' ? 'mt-5' : ''}`}>
                 {/* Email Field */}
                 <div>
                   <label
                     htmlFor="login-email"
                     className="block text-[11px] font-extrabold uppercase tracking-wider text-[#050505]"
                   >
-                    Campus Email
+                    {accountType === 'university'
+                      ? 'Official College Email (.edu / .ac.in / university domain)'
+                      : 'Campus or Personal Email (e.g. Gmail)'}
                   </label>
                   <div className="relative mt-1.5">
                     <span className="pointer-events-none absolute inset-y-0 left-0 grid w-10 place-items-center text-[#050505]/50">
@@ -566,7 +656,11 @@ export function LoginScreen({
                         setEmail(e.target.value)
                         if (emailError) setEmailError(null)
                       }}
-                      placeholder="student@university.edu"
+                      placeholder={
+                        accountType === 'university'
+                          ? 'faculty@mallareddyuniversity.ac.in'
+                          : 'student@gmail.com'
+                      }
                       autoComplete="email"
                       disabled={isLoading}
                       className={`h-[46px] w-full rounded-xl border-[1.5px] bg-white pl-10 pr-3.5 font-medium text-xs text-[#050505] outline-none transition-all placeholder:text-[#050505]/35 focus:ring-2 focus:ring-[#F5F04A] ${

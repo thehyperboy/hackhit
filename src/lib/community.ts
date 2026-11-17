@@ -1280,3 +1280,29 @@ export async function updateProfile(
     return { profile: null, error: errorMsg }
   }
 }
+
+/**
+ * Fetches all student profiles for directory and search exploration.
+ */
+export async function fetchAllProfiles(): Promise<{ profiles: Profile[]; error: string | null }> {
+  try {
+    const supabase = getSupabase()
+    if (!supabase) {
+      return { profiles: [], error: 'Backend client is not configured.' }
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      return { profiles: [], error: error.message }
+    }
+
+    return { profiles: (data || []) as Profile[], error: null }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    return { profiles: [], error: errorMsg }
+  }
+}

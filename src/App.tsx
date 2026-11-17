@@ -341,6 +341,7 @@ function App() {
           onNavigateToExplore={navigateToExplore}
           onNavigateToHackathons={navigateToHackathons}
           onNavigateToMyRegistrations={navigateToMyRegistrations}
+          onNavigateToOrganizer={navigateToOrganizer}
           onNavigateToLogin={() => navigateToLogin('explore')}
           onNavigateToSignup={navigateToSignup}
           onSignOut={handleSignOut}

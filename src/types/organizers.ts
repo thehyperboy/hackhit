@@ -46,3 +46,28 @@ export interface FetchOrganizerDashboardDataResult {
   isUnauthorized?: boolean
   isNetworkError?: boolean
 }
+
+export interface OrganizerParticipantItem {
+  id: string
+  hackathon_id: string
+  hackathon_title: string
+  student_name: string
+  student_email: string
+  student_university: string
+  registered_at: string
+  status: string
+  team_name?: string | null
+}
+
+export interface CreateHackathonParams {
+  title: string
+  category: 'AI/ML' | 'Web Development' | 'Blockchain' | 'Data Science' | 'Open Innovation'
+  mode: 'Online' | 'Offline' | 'Hybrid'
+  location?: string | null
+  prize_pool?: string | null
+  description?: string | null
+  cover_image_url?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  registration_deadline?: string | null
+}

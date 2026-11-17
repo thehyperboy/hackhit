@@ -12,11 +12,14 @@
 
 import { getSupabase } from './supabase'
 import { categorizeDatabaseError } from './hackathons'
+import { isInstitutionalDomain } from './institutionalAuth'
 import type {
   OrganizerRoleCheckResult,
   FetchOrganizerDashboardDataResult,
   OrganizerSummaryMetrics,
   OrganizerEventItem,
+  OrganizerParticipantItem,
+  CreateHackathonParams,
 } from '../types/organizers'
 
 /**
@@ -48,13 +51,40 @@ export async function checkOrganizerAccess(): Promise<OrganizerRoleCheckResult> 
     }
 
     const userId = authData.user.id
+    const userMeta = authData.user.user_metadata || {}
+    const userEmail = authData.user.email || ''
+    const isUnivRole =
+      userMeta.role === 'university' ||
+      userMeta.role === 'organizer' ||
+      userMeta.is_university === true
+    const isInstEmail = isInstitutionalDomain(userEmail)
 
-    // Query trusted organizer_roles table
+    // 1. If user signed up as University or has an institutional college email domain, grant organizer access
+    if (isUnivRole || isInstEmail) {
+      return {
+        isOrganizer: true,
+        roleState: 'authorized',
+        organizationName:
+          userMeta.organization_name ||
+          userMeta.university ||
+          'University Organizer',
+      }
+    }
+
+    // 2. Query trusted organizer_roles table
     const { data: roleRow, error: roleErr } = await supabase
       .from('organizer_roles')
       .select('user_id, role, organization_name, is_active')
       .eq('user_id', userId)
       .maybeSingle()
+
+    if (roleRow && roleRow.is_active) {
+      return {
+        isOrganizer: true,
+        roleState: 'authorized',
+        organizationName: roleRow.organization_name || null,
+      }
+    }
 
     if (roleErr) {
       const categorized = categorizeDatabaseError(roleErr)
@@ -79,18 +109,11 @@ export async function checkOrganizerAccess(): Promise<OrganizerRoleCheckResult> 
       }
     }
 
-    if (roleRow && roleRow.is_active) {
-      return {
-        isOrganizer: true,
-        roleState: 'authorized',
-        organizationName: roleRow.organization_name || null,
-      }
-    }
-
     return {
       isOrganizer: false,
       roleState: 'unauthorized',
-      error: 'Your campus account is not registered as an authorized organizer.',
+      error:
+        'Your campus account is registered as a student. Only verified university accounts with official institutional emails can create hackathons, post updates, and track participants.',
     }
   } catch (err) {
     const categorized = categorizeDatabaseError(err)
@@ -243,5 +266,149 @@ export async function fetchOrganizerDashboardData(): Promise<FetchOrganizerDashb
       isPendingSchema: categorized.isMissingTable,
       isNetworkError: categorized.isNetworkError,
     }
+  }
+}
+
+/**
+ * Creates and publishes a new hackathon on behalf of an authorized university organizer.
+ */
+export async function createOrganizerHackathon(
+  params: CreateHackathonParams
+): Promise<{ hackathon: OrganizerEventItem | null; error: string | null }> {
+  try {
+    const supabase = getSupabase()
+    if (!supabase) {
+      return { hackathon: null, error: 'Backend client is not configured.' }
+    }
+
+    const { data: authData, error: authErr } = await supabase.auth.getUser()
+    if (authErr || !authData?.user) {
+      return { hackathon: null, error: 'Authentication required. Please sign in.' }
+    }
+
+    const user = authData.user
+    const userMeta = user.user_metadata || {}
+    const orgName =
+      userMeta.organization_name || userMeta.university || 'University Organizer'
+
+    const newHackathon = {
+      title: params.title.trim(),
+      organizer: orgName,
+      organizer_id: user.id,
+      category: params.category,
+      mode: params.mode,
+      location:
+        params.location?.trim() ||
+        (params.mode === 'Online' ? 'Global / Virtual' : 'Campus Main Hall'),
+      prize_pool: params.prize_pool?.trim() || 'Trophy & Certificates',
+      description:
+        params.description?.trim() ||
+        `Official campus hackathon hosted by ${orgName}.`,
+      cover_image_url:
+        params.cover_image_url?.trim() ||
+        'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=80',
+      start_date:
+        params.start_date || new Date(Date.now() + 14 * 86400000).toISOString(),
+      end_date:
+        params.end_date || new Date(Date.now() + 16 * 86400000).toISOString(),
+      registration_deadline:
+        params.registration_deadline ||
+        new Date(Date.now() + 10 * 86400000).toISOString(),
+      featured: false,
+      status: 'published',
+    }
+
+    const { data, error } = await supabase
+      .from('hackathons')
+      .insert(newHackathon)
+      .select()
+      .single()
+
+    if (error) {
+      return { hackathon: null, error: error.message }
+    }
+
+    const createdItem: OrganizerEventItem = {
+      id: String(data.id),
+      title: String(data.title),
+      organizer: String(data.organizer),
+      category: String(data.category),
+      mode: data.mode as 'Online' | 'Offline' | 'Hybrid',
+      status: 'published',
+      location: data.location,
+      start_date: data.start_date,
+      end_date: data.end_date,
+      registration_deadline: data.registration_deadline,
+      cover_image_url: data.cover_image_url,
+      created_at: data.created_at || new Date().toISOString(),
+      registrations_count: 0,
+    }
+
+    return { hackathon: createdItem, error: null }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { hackathon: null, error: msg }
+  }
+}
+
+/**
+ * Fetches all registered students and their details for hackathons organized by this university.
+ */
+export async function fetchOrganizerParticipants(): Promise<{
+  participants: OrganizerParticipantItem[]
+  error: string | null
+}> {
+  try {
+    const supabase = getSupabase()
+    if (!supabase) {
+      return { participants: [], error: 'Backend client is not configured.' }
+    }
+
+    const { data: authData, error: authErr } = await supabase.auth.getUser()
+    if (authErr || !authData?.user) {
+      return { participants: [], error: 'Authentication required.' }
+    }
+
+    const userId = authData.user.id
+
+    // Fetch this organizer's hackathons first to get the list of IDs
+    const { data: myHackathons, error: hErr } = await supabase
+      .from('hackathons')
+      .select('id, title')
+      .eq('organizer_id', userId)
+
+    if (hErr || !myHackathons || myHackathons.length === 0) {
+      return { participants: [], error: null }
+    }
+
+    const hackathonMap = new Map<string, string>()
+    myHackathons.forEach((h) => hackathonMap.set(String(h.id), String(h.title)))
+
+    const { data: regsData, error: regsErr } = await supabase
+      .from('hackathon_registrations')
+      .select('*')
+      .in('hackathon_id', Array.from(hackathonMap.keys()))
+      .order('created_at', { ascending: false })
+
+    if (regsErr) {
+      return { participants: [], error: regsErr.message }
+    }
+
+    const normalized: OrganizerParticipantItem[] = (regsData || []).map((r) => ({
+      id: String(r.id),
+      hackathon_id: String(r.hackathon_id),
+      hackathon_title: hackathonMap.get(String(r.hackathon_id)) || 'Campus Hackathon',
+      student_name: r.full_name || 'Anonymous Student',
+      student_email: r.email || 'student@campus.edu',
+      student_university: r.university || 'University Student',
+      registered_at: r.created_at || new Date().toISOString(),
+      status: r.status || 'confirmed',
+      team_name: r.team_name || null,
+    }))
+
+    return { participants: normalized, error: null }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { participants: [], error: msg }
   }
 }
