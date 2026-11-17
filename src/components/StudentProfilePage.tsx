@@ -29,7 +29,6 @@ import {
   RefreshCw,
   Heart,
   MessageCircle,
-  Crop,
 } from 'lucide-react'
 import { TopNav } from './TopNav'
 import { ImageCropModal } from './ImageCropModal'
@@ -265,13 +264,6 @@ export function StudentProfilePage({
       URL.revokeObjectURL(rawImageSrc)
       setRawImageSrc(null)
     }
-  }
-
-  const handleAdjustCurrentAvatar = () => {
-    const srcToCrop = avatarPreview || profile?.avatar_url
-    if (!srcToCrop) return
-    setRawImageSrc(srcToCrop)
-    setCropperOpen(true)
   }
 
   const handleRemoveAvatar = () => {
@@ -627,25 +619,14 @@ export function StudentProfilePage({
                           </label>
 
                           {(avatarPreview || (!removeAvatar && profile.avatar_url)) && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={handleAdjustCurrentAvatar}
-                                className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border border-[#050505] bg-[#E9E7D8] px-3.5 text-xs font-bold uppercase tracking-wider text-[#050505] shadow-[1.5px_1.5px_0_#050505] hover:bg-[#F5F04A] transition-colors"
-                              >
-                                <Crop size={12} />
-                                <span>Adjust Crop 1:1</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={handleRemoveAvatar}
-                                className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
-                              >
-                                <Trash2 size={12} />
-                                <span>Remove</span>
-                              </button>
-                            </>
+                            <button
+                              type="button"
+                              onClick={handleRemoveAvatar}
+                              className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
+                            >
+                              <Trash2 size={12} />
+                              <span>Remove</span>
+                            </button>
                           )}
                         </div>
                         <p className="text-[11px] text-[#050505]/60">
