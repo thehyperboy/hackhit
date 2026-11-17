@@ -29,8 +29,6 @@ import {
   Building2,
   User,
   Compass,
-  Code2,
-  ExternalLink,
 } from 'lucide-react'
 
 import { TopNav } from './TopNav'

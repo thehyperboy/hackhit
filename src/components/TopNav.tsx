@@ -24,7 +24,6 @@ import {
   Swords,
   CalendarDays,
   UserRound,
-  LayoutDashboard,
   Building2,
   Menu,
   X,

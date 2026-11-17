@@ -28,13 +28,10 @@ import {
   MapPin,
   ExternalLink,
   ShieldAlert,
-  Building2,
   Megaphone,
   Search,
   Check,
   Loader2,
-  Sparkles,
-  User,
   Trophy,
 } from 'lucide-react'
 
@@ -52,7 +49,6 @@ import type {
   OrganizerEventItem,
   OrganizerParticipantItem,
 } from '../types/organizers'
-import type { HackathonCategory, ParticipationMode } from '../types/hackathons'
 
 export interface OrganizerDashboardProps {
   session?: Session | null
@@ -109,8 +105,10 @@ export function OrganizerDashboard({
 
   // Create Event Form state
   const [createTitle, setCreateTitle] = useState('')
-  const [createCategory, setCreateCategory] = useState<HackathonCategory>('AI/ML')
-  const [createMode, setCreateMode] = useState<ParticipationMode>('Online')
+  const [createCategory, setCreateCategory] = useState<
+    'AI/ML' | 'Web Development' | 'Blockchain' | 'Data Science' | 'Open Innovation'
+  >('AI/ML')
+  const [createMode, setCreateMode] = useState<'Online' | 'Offline' | 'Hybrid'>('Online')
   const [createLocation, setCreateLocation] = useState('')
   const [createPrizePool, setCreatePrizePool] = useState('')
   const [createDescription, setCreateDescription] = useState('')
@@ -276,7 +274,7 @@ export function OrganizerDashboard({
         ? `[${authResult.organizationName.toUpperCase()} OFFICIAL ANNOUNCEMENT]`
         : '[OFFICIAL UNIVERSITY ANNOUNCEMENT]'
       const fullText = `${orgTag}\n\n${updateContent.trim()}`
-      const res = await createPost(fullText, updateImage.trim() || undefined)
+      const res = await createPost({ content: fullText, userId: session?.user?.id })
       if (res.error) {
         setUpdateError(res.error)
       } else {
@@ -606,6 +604,12 @@ export function OrganizerDashboard({
         </header>
 
         {/* ERROR STATE BANNER */}
+        {isPendingSchema && (
+          <div className="rounded-[24px] border-[2px] border-amber-600 bg-amber-50 p-4 text-xs font-bold text-amber-900 shadow-[3px_3px_0_#050505]">
+            Schema initialization pending in database. Events will populate as tables are created.
+          </div>
+        )}
+
         {dataError && !isLoadingData && (
           <div
             role="alert"
@@ -941,7 +945,16 @@ export function OrganizerDashboard({
                   </label>
                   <select
                     value={createCategory}
-                    onChange={(e) => setCreateCategory(e.target.value as HackathonCategory)}
+                    onChange={(e) =>
+                      setCreateCategory(
+                        e.target.value as
+                          | 'AI/ML'
+                          | 'Web Development'
+                          | 'Blockchain'
+                          | 'Data Science'
+                          | 'Open Innovation'
+                      )
+                    }
                     className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
                   >
                     <option value="AI/ML">AI / Machine Learning</option>
@@ -958,7 +971,9 @@ export function OrganizerDashboard({
                   </label>
                   <select
                     value={createMode}
-                    onChange={(e) => setCreateMode(e.target.value as ParticipationMode)}
+                    onChange={(e) =>
+                      setCreateMode(e.target.value as 'Online' | 'Offline' | 'Hybrid')
+                    }
                     className="w-full rounded-xl border border-[#050505] bg-white px-3.5 py-2.5 text-xs font-medium text-[#050505] outline-none focus:ring-2 focus:ring-[#F5F04A]"
                   >
                     <option value="Online">Online / Virtual</option>
@@ -1110,6 +1125,12 @@ export function OrganizerDashboard({
               </div>
             </div>
 
+            {participantsError && (
+              <div className="rounded-[20px] border-[2px] border-red-600 bg-red-50 p-4 text-xs font-bold text-red-900">
+                {participantsError}
+              </div>
+            )}
+
             {isLoadingParticipants && (
               <div className="rounded-[24px] border-[2px] border-[#050505]/30 bg-white/70 p-10 text-center animate-pulse space-y-2">
                 <p className="text-xs font-bold text-[#050505]/70">Loading verified student participants...</p>
@@ -1247,10 +1268,6 @@ export function OrganizerDashboard({
             </form>
           </section>
         )}
-      </main>
-    </div>
-  )
-}
       </main>
     </div>
   )
