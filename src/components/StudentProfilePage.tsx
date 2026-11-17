@@ -29,8 +29,10 @@ import {
   RefreshCw,
   Heart,
   MessageCircle,
+  Crop,
 } from 'lucide-react'
 import { TopNav } from './TopNav'
+import { ImageCropModal } from './ImageCropModal'
 import type { Profile, Post } from '../lib/community'
 import {
   fetchProfileWithPosts,
@@ -103,6 +105,8 @@ export function StudentProfilePage({
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [removeAvatar, setRemoveAvatar] = useState(false)
+  const [cropperOpen, setCropperOpen] = useState(false)
+  const [rawImageSrc, setRawImageSrc] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadProfile = useCallback(async (isManualRefresh = false) => {
@@ -192,7 +196,12 @@ export function StudentProfilePage({
       URL.revokeObjectURL(avatarPreview)
       setAvatarPreview(null)
     }
+    if (rawImageSrc) {
+      URL.revokeObjectURL(rawImageSrc)
+      setRawImageSrc(null)
+    }
     setAvatarFile(null)
+    setCropperOpen(false)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -216,20 +225,53 @@ export function StudentProfilePage({
       return
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Image must be under 5MB.')
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image must be under 10MB.')
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
 
+    if (rawImageSrc) {
+      URL.revokeObjectURL(rawImageSrc)
+    }
+
+    // Generate object URL and open the 1:1 cropper modal
+    const objectUrl = URL.createObjectURL(file)
+    setRawImageSrc(objectUrl)
+    setCropperOpen(true)
+    setError(null)
+
+    // Reset input so re-picking same file triggers onChange
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleCropComplete = (croppedFile: File, previewUrl: string) => {
     if (avatarPreview) {
       URL.revokeObjectURL(avatarPreview)
     }
-
-    setAvatarFile(file)
-    setAvatarPreview(URL.createObjectURL(file))
+    setAvatarFile(croppedFile)
+    setAvatarPreview(previewUrl)
     setRemoveAvatar(false)
+    setAvatarError(false)
+    setCropperOpen(false)
     setError(null)
+  }
+
+  const handleCropCancel = () => {
+    setCropperOpen(false)
+    if (rawImageSrc) {
+      URL.revokeObjectURL(rawImageSrc)
+      setRawImageSrc(null)
+    }
+  }
+
+  const handleAdjustCurrentAvatar = () => {
+    const srcToCrop = avatarPreview || profile?.avatar_url
+    if (!srcToCrop) return
+    setRawImageSrc(srcToCrop)
+    setCropperOpen(true)
   }
 
   const handleRemoveAvatar = () => {
@@ -237,8 +279,13 @@ export function StudentProfilePage({
       URL.revokeObjectURL(avatarPreview)
       setAvatarPreview(null)
     }
+    if (rawImageSrc) {
+      URL.revokeObjectURL(rawImageSrc)
+      setRawImageSrc(null)
+    }
     setAvatarFile(null)
     setRemoveAvatar(true)
+    setCropperOpen(false)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -580,18 +627,29 @@ export function StudentProfilePage({
                           </label>
 
                           {(avatarPreview || (!removeAvatar && profile.avatar_url)) && (
-                            <button
-                              type="button"
-                              onClick={handleRemoveAvatar}
-                              className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
-                            >
-                              <Trash2 size={12} />
-                              <span>Remove</span>
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={handleAdjustCurrentAvatar}
+                                className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border border-[#050505] bg-[#E9E7D8] px-3.5 text-xs font-bold uppercase tracking-wider text-[#050505] shadow-[1.5px_1.5px_0_#050505] hover:bg-[#F5F04A] transition-colors"
+                              >
+                                <Crop size={12} />
+                                <span>Adjust Crop 1:1</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={handleRemoveAvatar}
+                                className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-3 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
+                              >
+                                <Trash2 size={12} />
+                                <span>Remove</span>
+                              </button>
+                            </>
                           )}
                         </div>
                         <p className="text-[11px] text-[#050505]/60">
-                          Supports JPG, PNG, WebP or GIF up to 5MB.
+                          Supports JPG, PNG, WebP up to 10MB. Automatically framed to 1:1 ratio.
                         </p>
                       </div>
                     </div>
@@ -957,6 +1015,14 @@ export function StudentProfilePage({
           </div>
         )}
       </main>
+
+      {/* Interactive 1:1 Profile Photo Cropper Modal */}
+      <ImageCropModal
+        isOpen={cropperOpen}
+        imageSrc={rawImageSrc}
+        onCropComplete={handleCropComplete}
+        onCancel={handleCropCancel}
+      />
     </div>
   )
 }

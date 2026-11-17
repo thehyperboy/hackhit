@@ -19,7 +19,9 @@ import {
   AlertCircle,
   Upload,
   Trash2,
+  Crop,
 } from 'lucide-react'
+import { ImageCropModal } from './ImageCropModal'
 import type { Profile, Post } from '../lib/community'
 import {
   fetchProfileWithPosts,
@@ -61,6 +63,8 @@ export function StudentProfileModal({
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [removeAvatar, setRemoveAvatar] = useState(false)
+  const [cropperOpen, setCropperOpen] = useState(false)
+  const [rawImageSrc, setRawImageSrc] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const isOwnProfile = Boolean(currentUserId && currentUserId === userId)
@@ -87,6 +91,8 @@ export function StudentProfileModal({
     setAvatarFile(null)
     setAvatarPreview(null)
     setAvatarError(false)
+    setCropperOpen(false)
+    setRawImageSrc(null)
   }
 
   useEffect(() => {
@@ -164,20 +170,51 @@ export function StudentProfileModal({
       return
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Image must be under 5MB.')
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image must be under 10MB.')
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
 
+    if (rawImageSrc) {
+      URL.revokeObjectURL(rawImageSrc)
+    }
+
+    const objectUrl = URL.createObjectURL(file)
+    setRawImageSrc(objectUrl)
+    setCropperOpen(true)
+    setError(null)
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleCropComplete = (croppedFile: File, previewUrl: string) => {
     if (avatarPreview) {
       URL.revokeObjectURL(avatarPreview)
     }
-
-    setAvatarFile(file)
-    setAvatarPreview(URL.createObjectURL(file))
+    setAvatarFile(croppedFile)
+    setAvatarPreview(previewUrl)
     setRemoveAvatar(false)
+    setAvatarError(false)
+    setCropperOpen(false)
     setError(null)
+  }
+
+  const handleCropCancel = () => {
+    setCropperOpen(false)
+    if (rawImageSrc) {
+      URL.revokeObjectURL(rawImageSrc)
+      setRawImageSrc(null)
+    }
+  }
+
+  const handleAdjustCurrentAvatar = () => {
+    const srcToCrop = avatarPreview || profile?.avatar_url
+    if (!srcToCrop) return
+    setRawImageSrc(srcToCrop)
+    setCropperOpen(true)
   }
 
   const handleRemoveAvatar = () => {
@@ -477,15 +514,27 @@ export function StudentProfileModal({
                           />
 
                           {currentEditAvatarUrl && (
-                            <button
-                              type="button"
-                              onClick={handleRemoveAvatar}
-                              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-red-600 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-all"
-                              title="Remove profile photo"
-                            >
-                              <Trash2 size={12} />
-                              <span>Remove</span>
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={handleAdjustCurrentAvatar}
+                                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[#050505] bg-[#E9E7D8] px-3 py-1.5 text-xs font-bold text-[#050505] shadow-[2px_2px_0_#050505] hover:bg-[#F5F04A] transition-all"
+                                title="Adjust crop (1:1 ratio)"
+                              >
+                                <Crop size={12} />
+                                <span>Adjust Crop 1:1</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={handleRemoveAvatar}
+                                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-red-600 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-all"
+                                title="Remove profile photo"
+                              >
+                                <Trash2 size={12} />
+                                <span>Remove</span>
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -726,6 +775,14 @@ export function StudentProfileModal({
           </div>
         ) : null}
       </div>
+
+      {/* Interactive 1:1 Profile Photo Cropper Modal */}
+      <ImageCropModal
+        isOpen={cropperOpen}
+        imageSrc={rawImageSrc}
+        onCropComplete={handleCropComplete}
+        onCancel={handleCropCancel}
+      />
     </div>
   )
 }
